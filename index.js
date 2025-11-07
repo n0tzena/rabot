@@ -1,11 +1,24 @@
 require('dotenv').config();
 const fs = require('node:fs');
 const path = require('node:path');
+const Database = require('better-sqlite3');
 const { Client, Collection, Events, GatewayIntentBits, MessageFlags } = require('discord.js');
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.DirectMessages] });
 
 client.commands = new Collection();
+
+const db = new Database('foo.db', {verbose: console.log});
+module.exports = { db };
+
+const stmt = db.prepare(`
+		CREATE TABLE IF NOT EXISTS account_link (
+			discord_id varchar(128) NOT NULL,
+			ra_username varchar(128) NOT NULL,
+			PRIMARY KEY (discord_id)
+		)
+	`);
+stmt.run();
 
 const foldersPath = path.join(__dirname, 'commands');
 const commandFolders = fs.readdirSync(foldersPath);

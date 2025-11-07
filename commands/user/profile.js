@@ -3,6 +3,7 @@ require('dotenv').config();
 const { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder } = require("discord.js");
 const Canvas = require("@napi-rs/canvas");
 const { request } = require('undici');
+const { db } = require("../../index.js");
 
 const authorization = buildAuthorization({ username: process.env.USERNAME, webApiKey: process.env.APIKEY});
 
@@ -17,15 +18,32 @@ module.exports = {
     
     async execute(interaction)
     {
-        if(!interaction.options.getString("usuario")) return;
-
-        // defer reply porque demora pra caralho pra funcionar essa porra de canvas
         await interaction.deferReply();
 
-        const userProfile = await getUserSummary(authorization, { username: interaction.options.getString("usuario") });
+        var ra_username;
+        // defer reply porque demora pra caralho pra funcionar essa porra de canvas
+        if(!interaction.options.getString("usuario"))
+        {
+            const rows = db.prepare(`SELECT * FROM account_link WHERE discord_id = ${interaction.user.id}`).all();
+            if(rows[0])
+            {
+                ra_username = rows[0].ra_username;
+            }
+            else
+            {
+                interaction.editReply("Link your account using `/link`!");
+                return;
+            }
+        }
+        else
+        {
+            ra_username = interaction.options.getString("usuario");
+        }
+
+        const userProfile = await getUserSummary(authorization, { username: ra_username });
         const lastGame = await getGame(authorization, { gameId: userProfile.lastGameId });
-        const lastAchievement = await getUserRecentAchievements(authorization, { username: interaction.options.getString("usuario"), minutes: 9999999999999 })
-        const awards = await getUserAwards(authorization, { username: interaction.options.getString("usuario") });
+        const lastAchievement = await getUserRecentAchievements(authorization, { username: ra_username, minutes: 9999999999999 })
+        const awards = await getUserAwards(authorization, { username: ra_username });
         
         // console.log(userProfile);
 

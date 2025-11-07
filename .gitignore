@@ -2,3 +2,4 @@
 discloud.config
 node_modules/
 .discloudignore
+foo.db
