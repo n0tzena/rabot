@@ -1,16 +1,28 @@
-const { SlashCommandBuilder } = require('discord.js');
+const { EmbedBuilder, SlashCommandBuilder } = require('discord.js');
 
 module.exports = {
     data: new SlashCommandBuilder()
     .setName('avatar')
     .setDescription('Displays an user avatar.')
-    .addStringOption(option =>
+    .addUserOption(option =>
         option.setName("user")
         .setDescription("User to display.")
     ),
 
     async execute(interaction)
     {
-        interaction.reply({files: interaction.user.avatarURL(options = {size: 4096})});
+        var avatar;
+        var user;
+
+        if(interaction.options.getUser('user'))
+            user = interaction.options.getUser('user');
+        else user = interaction.user;
+
+        avatar = user.avatarURL({size: 4096});
+        const embed = new EmbedBuilder()
+        .setTitle(user.displayName)
+        .setImage(avatar);
+
+        interaction.reply({embeds: [embed]});
     }
 }

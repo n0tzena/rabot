@@ -119,7 +119,8 @@ module.exports = {
         const profileEmbed = new EmbedBuilder()
             .setTitle(userProfile.user)
             .setThumbnail("https://retroachievements.org" + userProfile.userPic)
-            .setDescription(userProfile.motto === '' ? null : userProfile.motto);
+            .setDescription(userProfile.motto === '' ? null : userProfile.motto)
+            .setURL('https://retroachievements.org/user/' + userProfile.user);
 
             if(userProfile.rank != null)
             profileEmbed.addFields({name: "Rank", value: "#" + userProfile.rank.toString(), inline: false});
