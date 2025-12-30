@@ -2,7 +2,8 @@ require('dotenv').config();
 const fs = require('node:fs');
 const path = require('node:path');
 const Database = require('better-sqlite3');
-const { Client, Collection, Events, GatewayIntentBits, MessageFlags } = require('discord.js');
+const { Client, Collection, Events, GatewayIntentBits, MessageFlags, ActivityType } = require('discord.js');
+const { buildAuthorization, getRecentGameAwards } = require('@retroachievements/api');
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.DirectMessages] });
 
@@ -40,6 +41,33 @@ for (const folder of commandFolders) {
 
 client.once(Events.ClientReady, readyClient => {
     console.log(`logged in ${readyClient.user.tag}`);
+
+	setInterval(async () => {
+		let authorization = buildAuthorization({username: process.env.USERNAME, webApiKey: process.env.APIKEY})
+		let recentAwards = await getRecentGameAwards(authorization, {count: 1});
+		let awardType;
+
+		switch(recentAwards.results[0].awardKind)
+		{
+			case "beaten-hardcore":
+				awardType = "beaten";
+				break;
+			case 'beaten-softcore':
+				awardType = "beaten";
+				break;
+			case 'completed':
+				awardType = "completed";
+				break;
+			case 'mastered':
+				awardType = "mastered";
+				break;
+		}
+
+		client.user.setActivity(
+			`${recentAwards.results[0].user} has ${awardType} ${recentAwards.results[0].gameTitle}!`, 
+			{ type: ActivityType.Custom }
+		);
+	}, 30000)
 });
 
 client.on(Events.InteractionCreate, async interaction => {

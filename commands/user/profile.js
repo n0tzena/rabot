@@ -1,6 +1,6 @@
-const { buildAuthorization, getUserProfile, getGame, getUserSummary, getUserRecentAchievements, getUserAwards } = require("@retroachievements/api");
+const { buildAuthorization, getUserRecentlyPlayedGames, getGame, getUserSummary, getUserRecentAchievements, getUserAwards } = require("@retroachievements/api");
 require('dotenv').config();
-const { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder } = require("discord.js");
+const { ComponentType, SlashCommandBuilder, EmbedBuilder, AttachmentBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ActionRowBuilder, MessageFlags, Embed } = require("discord.js");
 const Canvas = require("@napi-rs/canvas");
 const { request } = require('undici');
 const { db } = require("../../index.js");
@@ -18,9 +18,32 @@ module.exports = {
     
     async execute(interaction)
     {
+        const selectDisplayMenu = new StringSelectMenuBuilder()
+        .setCustomId("displayMenu")
+        .setPlaceholder("Display other info...")
+        .addOptions(
+            new StringSelectMenuOptionBuilder()
+            .setLabel("Profile")
+            .setEmoji("🗒️")
+            .setValue("profile"),
+            new StringSelectMenuOptionBuilder()
+            .setLabel("Last 5 Games Played")
+            .setEmoji("🕒")
+            .setValue("last5")
+        );
+
+        const interactionRow = new ActionRowBuilder().addComponents(selectDisplayMenu);
+
         await interaction.deferReply();
 
         var ra_username;
+
+        var userProfile;
+        var lastGame;
+        var lastAchievement;
+        var awards;
+        var recentGames;
+
         // defer reply porque demora pra caralho pra funcionar essa porra de canvas
         if(!interaction.options.getString("usuario"))
         {
@@ -32,6 +55,9 @@ module.exports = {
             else
             {
                 interaction.editReply("Link your account using `/link`!");
+                setTimeout(() => {
+                    interaction.deleteReply();
+                }, 5000);
                 return;
             }
         }
@@ -40,12 +66,22 @@ module.exports = {
             ra_username = interaction.options.getString("usuario");
         }
 
-        const userProfile = await getUserSummary(authorization, { username: ra_username });
-        const lastGame = await getGame(authorization, { gameId: userProfile.lastGameId });
-        const lastAchievement = await getUserRecentAchievements(authorization, { username: ra_username, minutes: 9999999999999 })
-        const awards = await getUserAwards(authorization, { username: ra_username });
-        
-        // console.log(userProfile);
+        try
+        {
+            userProfile = await getUserSummary(authorization, { username: ra_username });
+            lastGame = await getGame(authorization, { gameId: userProfile.lastGameId });
+            lastAchievement = await getUserRecentAchievements(authorization, { username: ra_username, minutes: 9999999999999 });
+            awards = await getUserAwards(authorization, { username: ra_username });
+            recentGames = await getUserRecentlyPlayedGames(authorization, { username: ra_username, count: 5});            
+        } catch
+        {
+            interaction.editReply({ content: "This profile doesn't exist.", flags: MessageFlags.Ephemeral});
+            setTimeout(() => {
+                interaction.deleteReply();
+            }, 5000);
+            return;
+        }
+
 
         // awards for masteries
         var awardsCount = 0;
@@ -133,6 +169,27 @@ module.exports = {
         const awardsImage = await canvas.encode('png');
         const awardsAttachment = new AttachmentBuilder(awardsImage, {name: "awards.png"});
 
+        var messageEmbeds = [];
+        var messageFiles = [];
+
+        var recentGamesEmbeds = [];
+
+        // recent games
+        recentGames.forEach(element => {
+            let gameEmbed = new EmbedBuilder()
+                .setTitle(element.title)
+                .setThumbnail("https://retroachievements.org" + element.imageIcon)
+                .setURL('https://retroachievements.org/game/' + element.gameId)
+                .setFooter({ text: "Last played in"})
+                .setTimestamp(Date.parse(element.lastPlayed))
+                .addFields(
+                    {name: "Achievements", value: `${element.numAchieved} of ${element.numPossibleAchievements}`, inline: true},
+                    {name: "Points", value: `${element.scoreAchieved} of ${element.possibleScore}`, inline: true}
+                );
+
+            recentGamesEmbeds.push(gameEmbed);
+        });
+
         // profile
         const profileEmbed = new EmbedBuilder()
             .setTitle(userProfile.user)
@@ -153,11 +210,7 @@ module.exports = {
             
             profileEmbed.setFooter({text: userProfile.richPresenceMsg, iconURL: 'https://retroachievements.org' + lastGame.gameIcon});
 
-
-        // award embed
-        const awardEmbed = new EmbedBuilder()
-            .setTitle("Game Awards 👑")
-            .setImage("attachment://awards.png");
+        messageEmbeds.push(profileEmbed);
         
         // achievement
         var achievementEmbed = new EmbedBuilder()
@@ -173,10 +226,40 @@ module.exports = {
                 {name: "Achieved in", value: `<t:${unixTimestamp}:F>`}
             );
             achievementEmbed.setThumbnail("https://retroachievements.org" + lastAchievement[0].badgeUrl);
+
+            messageEmbeds.push(achievementEmbed);
         }
 
-        await interaction.editReply({embeds: [profileEmbed, achievementEmbed, awardEmbed], files: [awardsAttachment]});
+        // award embed
+        const awardEmbed = new EmbedBuilder()
+        .setTitle("Game Awards 👑")
+        .setImage("attachment://awards.png");
+
+        if(awardsCount > 0)
+        {
+            messageEmbeds.push(awardEmbed);
+            messageFiles.push(awardsAttachment);
+        }
+
+        // https://discordjs.guide/legacy/interactive-components/interactions
+        const reply = await interaction.editReply({embeds: messageEmbeds, files: messageFiles, components: [interactionRow], withResponse: true});
+
+        const collector = reply.createMessageComponentCollector({
+            componentType: ComponentType.StringSelect,
+            time: 60_000
+        });
+
+        collector.on('collect', async (i) => {
+            const selection = i.values[0];
+            if(selection === 'profile')
+            {
+                // use update for actionrow interactions instead of editReply
+                await i.update({embeds: messageEmbeds, files: messageFiles});
+            } else if(selection === 'last5')
+            {
+                await i.update({embeds: recentGamesEmbeds, files: []});
+            }
+        })
+
     }
 };
-
-

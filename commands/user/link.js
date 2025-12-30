@@ -1,4 +1,4 @@
-const { EmbedBuilder, SlashCommandBuilder } = require('discord.js');
+const { EmbedBuilder, SlashCommandBuilder, messageLink, MessageFlags } = require('discord.js');
 const { db } = require('../../index.js');
 
 module.exports = {
@@ -16,14 +16,17 @@ module.exports = {
         const rows = db.prepare(`SELECT * FROM account_link WHERE discord_id = ${interaction.user.id}`).all();
         if(rows[0])
         {
-            // atualizar link
+            const update = db.prepare(`UPDATE account_link SET ra_username = ? WHERE discord_id = ${interaction.user.id}`);
+            update.run(interaction.options.getString("username"));
+
+            interaction.reply({content: "Account link updated.", flags: MessageFlags.Ephemeral});
         }
         else
         {
             const insert = db.prepare("INSERT INTO account_link (discord_id, ra_username) VALUES (?, ?)");
             insert.run(interaction.user.id, interaction.options.getString("username"));
 
-            interaction.reply("Account linked successfully.");
+            interaction.reply({content: "Account linked successfully.", flags: MessageFlags.Ephemeral});
         }
     }
 }
