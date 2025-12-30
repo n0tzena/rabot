@@ -43,30 +43,37 @@ client.once(Events.ClientReady, readyClient => {
     console.log(`logged in ${readyClient.user.tag}`);
 
 	setInterval(async () => {
-		let authorization = buildAuthorization({username: process.env.USERNAME, webApiKey: process.env.APIKEY})
-		let recentAwards = await getRecentGameAwards(authorization, {count: 1});
-		let awardType;
-
-		switch(recentAwards.results[0].awardKind)
+		try
 		{
-			case "beaten-hardcore":
-				awardType = "beaten";
-				break;
-			case 'beaten-softcore':
-				awardType = "beaten";
-				break;
-			case 'completed':
-				awardType = "completed";
-				break;
-			case 'mastered':
-				awardType = "mastered";
-				break;
-		}
+			let authorization = buildAuthorization({username: process.env.USERNAME, webApiKey: process.env.APIKEY})
+			let recentAwards = await getRecentGameAwards(authorization, {count: 1});
+			let awardType;
 
-		client.user.setActivity(
-			`${recentAwards.results[0].user} has ${awardType} ${recentAwards.results[0].gameTitle}!`, 
-			{ type: ActivityType.Custom }
-		);
+			switch(recentAwards.results[0].awardKind)
+			{
+				case "beaten-hardcore":
+					awardType = "beaten";
+					break;
+				case 'beaten-softcore':
+					awardType = "beaten";
+					break;
+				case 'completed':
+					awardType = "completed";
+					break;
+				case 'mastered':
+					awardType = "mastered";
+					break;
+			}
+
+			client.user.setActivity(
+				`${recentAwards.results[0].user} has ${awardType} ${recentAwards.results[0].gameTitle}!`, 
+				{ type: ActivityType.Custom }
+			);			
+		}
+		catch(e)
+		{
+			console.log(e);
+		}
 	}, 30000)
 });
 
