@@ -202,6 +202,9 @@ module.exports = {
                 await i.update({embeds: recentGamesEmbeds, files: []});
             } else if(selection === 'beaten')
             {
+                // deferUpdate porque os awards demoram muito dependendo de quantas awards tem;
+                // alguns usuarios tem muitas awards e isso excede o tempo de resposta
+                await i.deferUpdate();
                 const beatenImage = await createAwardImage(awards, { imageAwardType: "Game Beaten", totalAwardsToDisplay: 25 });
 
                 const beatenAttachment = new AttachmentBuilder(beatenImage, {name: "beatengames.png"})
@@ -209,7 +212,7 @@ module.exports = {
                 .setTitle("Games Beaten")
                 .setImage("attachment://beatengames.png")
 
-                await i.update({embeds: [beatenEmbed], files: [beatenAttachment]})
+                await i.editReply({embeds: [beatenEmbed], files: [beatenAttachment]})
             }
         })
 
