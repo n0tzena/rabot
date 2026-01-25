@@ -1,8 +1,7 @@
 const { buildAuthorization, getUserRecentlyPlayedGames, getGame, getUserSummary, getUserRecentAchievements, getUserAwards } = require("@retroachievements/api");
 require('dotenv').config();
-const { ComponentType, SlashCommandBuilder, EmbedBuilder, AttachmentBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ActionRowBuilder, MessageFlags, Embed } = require("discord.js");
-const Canvas = require("@napi-rs/canvas");
-const { request } = require('undici');
+const { ComponentType, SlashCommandBuilder, EmbedBuilder, AttachmentBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ActionRowBuilder, MessageFlags } = require("discord.js");
+const { createAwardImage } = require("../../canvasUtils.js");
 const { db } = require("../../index.js");
 
 const authorization = buildAuthorization({ username: process.env.USERNAME, webApiKey: process.env.APIKEY});
@@ -29,7 +28,11 @@ module.exports = {
             new StringSelectMenuOptionBuilder()
             .setLabel("Last 5 Games Played")
             .setEmoji("🕒")
-            .setValue("last5")
+            .setValue("last5"),
+            new StringSelectMenuOptionBuilder()
+            .setLabel("Beaten Games")
+            .setEmoji("🗡️")
+            .setValue("beaten")
         );
 
         const interactionRow = new ActionRowBuilder().addComponents(selectDisplayMenu);
@@ -82,92 +85,21 @@ module.exports = {
             return;
         }
 
-
-        // awards for masteries
         var awardsCount = 0;
-        var masteriesCount;
-        var completedCount;
-        
+        var eventAwardsCount = 0;
         awards.visibleUserAwards.forEach(element => 
         {
             if(element.awardType == "Mastery/Completion")
                 awardsCount++;
-            
-            // hardcore award
-            if(element.awardDataExtra == 1)
-                masteriesCount++;
-
-            if(element.awardDataExtra == 0)
-                completedCount++;
+            if(element.awardType == "Event")
+                eventAwardsCount++;
         });
 
-        // awards canvas
-        // propriedades
-        const awardIconSize = 48;
-        const iconOffset = 2;
-
-        var awardRows = Math.ceil(awardsCount / 5);
-
-        var maxRowAwards = 5;
-        const maxAwardsDisplay = 15;
-        
-        // limite de linhas
-        if(awardRows * maxRowAwards > maxAwardsDisplay)
-            awardRows = maxAwardsDisplay / maxRowAwards;
-
-        if(awardsCount < maxRowAwards)
-            maxRowAwards = awardsCount;
-
-        // criar canvas correspondente ao número de awards
-        
-        const canvas = Canvas.createCanvas((awardIconSize * maxRowAwards + iconOffset * maxRowAwards), (awardIconSize * awardRows + iconOffset * awardRows));
-        const context = canvas.getContext("2d");
-
-        // propriedades do canvas
-        context.lineWidth = 2;
-        // https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/createLinearGradient
-        const gradient = context.createLinearGradient(0, 0, 0, awardIconSize + 16);
-        gradient.addColorStop(0, "#ffd445");
-        gradient.addColorStop(1, "#8f7624");
-        context.strokeStyle = gradient;
-
-        // inserir as imagens no canvas
-        for (let index = 0, counter = 0, counterRow, counterColumn = 0; index < awards.visibleUserAwards.length; index++) {
-            // quebra o loop se o counter for maior que 14 (começa em 0, 15 awards no total)
-            if(counter > maxAwardsDisplay - 1)
-                break;
-
-            counterRow = Math.ceil((counter + 1) / 5);
-            if(counterColumn + 1 > maxRowAwards)
-                counterColumn = 0;
-
-            if(awards.visibleUserAwards[index].awardType == "Mastery/Completion")
-            {
-                const { body } = await request("https://retroachievements.org" + awards.visibleUserAwards[index].imageIcon);
-                awardImage = await Canvas.loadImage(await body.arrayBuffer());
-
-                // (posiçao x, posiçao y, largura x, largura y)
-                await context.drawImage(
-                    awardImage, 
-                    counterColumn * awardIconSize + iconOffset * counterColumn, 
-                    (counterRow - 1) * awardIconSize + iconOffset * counterRow, 
-                    awardIconSize, 
-                    awardIconSize);
-
-                // se pegou no hardcore, borda dourada
-                if(awards.visibleUserAwards[index].awardDataExtra == 1)
-                context.strokeRect(
-                    counterColumn * awardIconSize + iconOffset * counterColumn + 1, 
-                    (counterRow - 1) * awardIconSize + iconOffset * counterRow + 1, 
-                    awardIconSize - 2, 
-                    awardIconSize - 2);
-
-                counter++; counterColumn++;             
-            }
-        }
-
-        const awardsImage = await canvas.encode('png');
+        const awardsImage = await createAwardImage(awards);
         const awardsAttachment = new AttachmentBuilder(awardsImage, {name: "awards.png"});
+
+        const eventAwardsImage = await createAwardImage(awards, { imageAwardType: "Event", drawBorder: false });
+        const eventAwardsAttachment = new AttachmentBuilder(eventAwardsImage, {name: "eventawards.png"});
 
         var messageEmbeds = [];
         var messageFiles = [];
@@ -232,13 +164,23 @@ module.exports = {
 
         // award embed
         const awardEmbed = new EmbedBuilder()
-        .setTitle("Game Awards 👑")
+        .setTitle(`Game Awards (${awardsCount})`)
         .setImage("attachment://awards.png");
 
         if(awardsCount > 0)
         {
             messageEmbeds.push(awardEmbed);
             messageFiles.push(awardsAttachment);
+        }
+
+        const eventAwardEmbed = new EmbedBuilder()
+        .setTitle(`Event Awards (${eventAwardsCount})`)
+        .setImage("attachment://eventawards.png");
+
+        if(eventAwardsCount > 0)
+        {
+            messageEmbeds.push(eventAwardEmbed);
+            messageFiles.push(eventAwardsAttachment);
         }
 
         // https://discordjs.guide/legacy/interactive-components/interactions
@@ -258,6 +200,16 @@ module.exports = {
             } else if(selection === 'last5')
             {
                 await i.update({embeds: recentGamesEmbeds, files: []});
+            } else if(selection === 'beaten')
+            {
+                const beatenImage = await createAwardImage(awards, { imageAwardType: "Game Beaten", totalAwardsToDisplay: 25 });
+
+                const beatenAttachment = new AttachmentBuilder(beatenImage, {name: "beatengames.png"})
+                const beatenEmbed = new EmbedBuilder()
+                .setTitle("Games Beaten")
+                .setImage("attachment://beatengames.png")
+
+                await i.update({embeds: [beatenEmbed], files: [beatenAttachment]})
             }
         })
 
