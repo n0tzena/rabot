@@ -40,7 +40,7 @@ async function createAwardImage(playerAwards,
     });
             
     // limite de linhas
-    var awardRows = Math.ceil(awardsCount / 5);
+    var awardRows = Math.ceil(awardsCount / maxRowAwards);
 
     if(awardRows * maxRowAwards > totalAwardsToDisplay)
         awardRows = totalAwardsToDisplay / maxRowAwards;
@@ -76,7 +76,7 @@ async function createAwardImage(playerAwards,
         if(counter > totalAwardsToDisplay - 1)
             break;
 
-        counterRow = Math.ceil((counter + 1) / 5);
+        counterRow = Math.ceil((counter + 1) / maxRowAwards);
 
         if(counterColumn + 1 > maxRowAwards)
             counterColumn = 0;

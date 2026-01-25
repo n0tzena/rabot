@@ -9,10 +9,10 @@ const authorization = buildAuthorization({ username: process.env.USERNAME, webAp
 module.exports = {
     data: new SlashCommandBuilder()
     .setName('profile')
-    .setDescription('Mostra um perfil no RetroAchievements detalhadamente. Se estiver vazio, irá pegar o seu perfil.')
+    .setDescription('Shows a RetroAchievements\' profile. If empty, shows your profile, if linked.')
     .addStringOption(option =>
-        option.setName("usuario")
-        .setDescription("Insira o usuário para pesquisar.")
+        option.setName("user")
+        .setDescription("User to search.")
     ),
     
     async execute(interaction)
@@ -25,6 +25,10 @@ module.exports = {
             .setLabel("Profile")
             .setEmoji("🗒️")
             .setValue("profile"),
+            new StringSelectMenuOptionBuilder()
+            .setLabel("Show All Awards")
+            .setEmoji("🏆")
+            .setValue("allawards"),
             new StringSelectMenuOptionBuilder()
             .setLabel("Last 5 Games Played")
             .setEmoji("🕒")
@@ -48,7 +52,7 @@ module.exports = {
         var recentGames;
 
         // defer reply porque demora pra caralho pra funcionar essa porra de canvas
-        if(!interaction.options.getString("usuario"))
+        if(!interaction.options.getString("user"))
         {
             const rows = db.prepare(`SELECT * FROM account_link WHERE discord_id = ${interaction.user.id}`).all();
             if(rows[0])
@@ -66,7 +70,7 @@ module.exports = {
         }
         else
         {
-            ra_username = interaction.options.getString("usuario");
+            ra_username = interaction.options.getString("user");
         }
 
         try
@@ -87,23 +91,20 @@ module.exports = {
 
         var awardsCount = 0;
         var eventAwardsCount = 0;
+        var beatenGameCount = 0;
+
         awards.visibleUserAwards.forEach(element => 
         {
             if(element.awardType == "Mastery/Completion")
                 awardsCount++;
             if(element.awardType == "Event")
                 eventAwardsCount++;
+            if(element.awardType == "Game Beaten")
+                beatenGameCount++;
         });
-
-        const awardsImage = await createAwardImage(awards);
-        const awardsAttachment = new AttachmentBuilder(awardsImage, {name: "awards.png"});
-
-        const eventAwardsImage = await createAwardImage(awards, { imageAwardType: "Event", drawBorder: false });
-        const eventAwardsAttachment = new AttachmentBuilder(eventAwardsImage, {name: "eventawards.png"});
 
         var messageEmbeds = [];
         var messageFiles = [];
-
         var recentGamesEmbeds = [];
 
         // recent games
@@ -130,7 +131,11 @@ module.exports = {
             .setURL('https://retroachievements.org/user/' + userProfile.user);
 
             if(userProfile.rank != null)
-            profileEmbed.addFields({name: "Rank", value: "#" + userProfile.rank.toString(), inline: false});
+                profileEmbed.addFields({name: "Rank", value: "#" + userProfile.rank.toString(), inline: true});
+
+            if(beatenGameCount > 0)
+                profileEmbed.addFields({name: "Beaten Games", value: beatenGameCount.toString(), inline: true})
+                
 
             profileEmbed.addFields(
                 {name: "Hardcore Points", value: userProfile.totalPoints.toString(), inline: true},
@@ -138,9 +143,9 @@ module.exports = {
             )
             
             if(userProfile.totalSoftcorePoints > 0)
-            profileEmbed.addFields({name: "Softcore Points", value: userProfile.totalSoftcorePoints.toString(), inline: true});
+                profileEmbed.addFields({name: "Softcore Points", value: userProfile.totalSoftcorePoints.toString(), inline: true});
             
-            profileEmbed.setFooter({text: userProfile.richPresenceMsg, iconURL: 'https://retroachievements.org' + lastGame.gameIcon});
+            profileEmbed.setFooter({text: "Last Game Played: " + lastGame.title + " - " + userProfile.richPresenceMsg, iconURL: 'https://retroachievements.org' + lastGame.gameIcon});
 
         messageEmbeds.push(profileEmbed);
         
@@ -162,25 +167,14 @@ module.exports = {
             messageEmbeds.push(achievementEmbed);
         }
 
-        // award embed
-        const awardEmbed = new EmbedBuilder()
-        .setTitle(`Game Awards (${awardsCount})`)
-        .setImage("attachment://awards.png");
-
         if(awardsCount > 0)
         {
-            messageEmbeds.push(awardEmbed);
+            awardsImage = await createAwardImage(awards, { totalAwardsToDisplay: 7, maxImagesPerRow: 7 });
+            awardsAttachment = new AttachmentBuilder(awardsImage, {name: "awards5.png"})
+            
+            profileEmbed.setImage("attachment://awards5.png");
+
             messageFiles.push(awardsAttachment);
-        }
-
-        const eventAwardEmbed = new EmbedBuilder()
-        .setTitle(`Event Awards (${eventAwardsCount})`)
-        .setImage("attachment://eventawards.png");
-
-        if(eventAwardsCount > 0)
-        {
-            messageEmbeds.push(eventAwardEmbed);
-            messageFiles.push(eventAwardsAttachment);
         }
 
         // https://discordjs.guide/legacy/interactive-components/interactions
@@ -188,7 +182,7 @@ module.exports = {
 
         const collector = reply.createMessageComponentCollector({
             componentType: ComponentType.StringSelect,
-            time: 60_000
+            time: 300_000
         });
 
         collector.on('collect', async (i) => {
@@ -197,20 +191,54 @@ module.exports = {
             {
                 // use update for actionrow interactions instead of editReply
                 await i.update({embeds: messageEmbeds, files: messageFiles});
-            } else if(selection === 'last5')
+            } 
+            else if(selection === 'allawards')
+            {
+                await i.deferUpdate();
+
+                const processingEmbed = new EmbedBuilder()
+                .setTitle("Creating images...");
+
+                await i.editReply({embeds: [processingEmbed], files: []});
+
+                const masteryImage = await createAwardImage(awards, { totalAwardsToDisplay: 25 });
+                const masteryAttachment = new AttachmentBuilder(masteryImage, {name: "mastery.png"});
+                const masteryEmbed = new EmbedBuilder()
+                .setTitle(`Game Awards (${awardsCount})`)
+                .setImage("attachment://mastery.png")
+                .setFooter({text: userProfile.user, iconURL: "https://retroachievements.org" + userProfile.userPic})
+                
+                const eventImage = await createAwardImage(awards, { totalAwardsToDisplay: 25, imageAwardType: "Event" });
+                const eventAttachment = new AttachmentBuilder(eventImage, {name: "event.png"});
+                const eventEmbed = new EmbedBuilder()
+                .setTitle(`Event Awards (${eventAwardsCount})`)
+                .setImage("attachment://event.png")
+                .setFooter({text: userProfile.user, iconURL: "https://retroachievements.org" + userProfile.userPic})
+
+                i.editReply({embeds: [masteryEmbed, eventEmbed], files: [masteryAttachment, eventAttachment]});
+            }
+            else if(selection === 'last5')
             {
                 await i.update({embeds: recentGamesEmbeds, files: []});
-            } else if(selection === 'beaten')
+            } 
+            else if(selection === 'beaten')
             {
                 // deferUpdate porque os awards demoram muito dependendo de quantas awards tem;
                 // alguns usuarios tem muitas awards e isso excede o tempo de resposta
                 await i.deferUpdate();
-                const beatenImage = await createAwardImage(awards, { imageAwardType: "Game Beaten", totalAwardsToDisplay: 25 });
+
+                const processingEmbed = new EmbedBuilder()
+                .setTitle("Creating image...");
+
+                await i.editReply({embeds: [processingEmbed], files: []});
+
+                const beatenImage = await createAwardImage(awards, { imageAwardType: "Game Beaten", totalAwardsToDisplay: 49, maxImagesPerRow: 7 });
 
                 const beatenAttachment = new AttachmentBuilder(beatenImage, {name: "beatengames.png"})
                 const beatenEmbed = new EmbedBuilder()
-                .setTitle("Games Beaten")
+                .setTitle(`Games Beaten (${beatenGameCount})`)
                 .setImage("attachment://beatengames.png")
+                .setFooter({text: userProfile.user, iconURL: "https://retroachievements.org" + userProfile.userPic})
 
                 await i.editReply({embeds: [beatenEmbed], files: [beatenAttachment]})
             }
